@@ -158,6 +158,9 @@ docker compose up -d --build --scale web=3
 ```
 curl -vk https://milestone.local:8443/api/name
 ```
+# POC
+<img width="815" height="347" alt="image" src="https://github.com/user-attachments/assets/8e335773-7fab-4997-83d7-7c86b3de2a4f" />
+
 ## AI Assistance Reflection:
   I used generative AI to:
   Design the stack layout (web → API → DB).
