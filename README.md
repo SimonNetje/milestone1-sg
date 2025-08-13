@@ -25,22 +25,23 @@ Browser --> [LB: Nginx] --> [Web: Ubuntu 24.04 + Nginx]
 
 ## 📁 Project Structure
 milestone_sg/
-├─ docker-compose.yml
-├─ web/
-│ ├─ Dockerfile
-│ ├─ nginx.conf
-│ ├─ html/
-│ │ └─ index.html
-│ └─ certs/
-├─ api/
-│ ├─ app.py
-│ └─ requirements.txt
-├─ mongo/
-│ ├─ init/
-│ │ └─ init.js
-│ └─ data/
-└─ lb/
-└─ nginx.conf
+├── docker-compose.yml
+├── web/
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── html/
+│   │   └── index.html
+│   └── certs/
+├── api/
+│   ├── app.py
+│   └── requirements.txt
+├── mongo/
+│   ├── init/
+│   │   └── init.js
+│   └── data/
+└── lb/
+    └── nginx.conf
+
 ---
 ## ✅ Requirements Mapping
 | Requirement | Implementation |
