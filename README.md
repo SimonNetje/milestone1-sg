@@ -24,6 +24,7 @@ Browser --> [LB: Nginx] --> [Web: Ubuntu 24.04 + Nginx]
 ---
 
 ## 📁 Project Structure
+```
 milestone_sg/
 ├── docker-compose.yml
 ├── web/
@@ -41,6 +42,7 @@ milestone_sg/
 │   └── data/
 └── lb/
     └── nginx.conf
+```
 
 ---
 ## ✅ Requirements Mapping
