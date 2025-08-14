@@ -673,7 +673,7 @@ You can copy this entire tree into a fresh folder and run it as-is. Adjust crede
 
 ```
 ## Reflection on prompt
-This first prompt made it work first try so no further tweaking was needed now i am adding load balancing
+*This first prompt made it work first try so no further tweaking was needed now i am adding load balancing*
 ---
 
 ## AI Assistance Reflection:
