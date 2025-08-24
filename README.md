@@ -1242,6 +1242,7 @@ docker compose up -d --build
 
 (If ./web/html doesn’t exist on the host, create it and put your index.html there.)
 ```
+---
 ## reflection on input
 *after this my assignment complied with what was asked of me so no further prompts were needed*
 
@@ -1249,6 +1250,8 @@ docker compose up -d --build
 Generative AI was a essential tool used during this assignment. i used it in the following ways:
 - code generation and scaffolding: AI helped me to write the files, this gave me the starting baseline instead of starting from scratch
 - Debugging: When i encountered errors like 502 bad gateway and backend unavailable. I used AI as my guide to fix these issues
+
+
 While AI generated solution, I still did manual testing and adapted or rejected things AI gave me or didnt give me for example it didnt update that it used wget in the healthcheck so i replaced it with curl because of the image differences
 
 ## Reflection
