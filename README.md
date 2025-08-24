@@ -1,4 +1,4 @@
-# Milestone 1 – Docker Web + MongoDB – Simon Gielen
+# Milestone 1 – Simon Gielen
 
 ## 📌 Overview
 This project sets up a **web stack** using Docker Compose that:
