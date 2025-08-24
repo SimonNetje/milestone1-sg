@@ -59,6 +59,21 @@ milestone-stack/
 
 ---
 
+## Install docker on VM
+   1. sudo apt update
+   2. sudo apt install apt-transport-https curl
+   3. curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --
+   dearmor -o /etc/apt/keyrings/docker.gpg
+   4. echo "deb [arch=$(dpkg --print-architecture) signed-
+   by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu
+   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee
+   /etc/apt/sources.list.d/docker.list > /dev/null
+   5. sudo apt update
+### prevent the usage of sudo as much as possible
+   1. sudo usermod -aG docker <user>
+   2. newgrp docker # load the new group permissions in
+restart the VM after these changes
+
 ## ⚙ Configuration Files
 
 ### `docker-compose.yaml`
