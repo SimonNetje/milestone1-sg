@@ -780,9 +780,11 @@ You only see localhost working: you’re testing from the VM/host mismatch. Hit 
 If you want me to convert the heredoc placeholders into a single copy-paste blob with all content inlined, say so and I’ll drop the full ready-to-paste script.
 ```
 ## Reflection on output
+
 *it was close to working in one prompt but it said bad gateway on the web page so i sent the error hopng that would fix it*
 ---
 ## Prompt 2
+
 vagrant@vagrant:~/milestone-stack$ sudo docker compose ps
 NAME              IMAGE                 COMMAND                  SERVICE   CREATED         STATUS                          PORTS
 contapi-m1-SG     milestone-stack-api   "python app.py"          api       2 minutes ago   Restarting (0) 25 seconds ago
@@ -959,9 +961,11 @@ sudo docker compose up -d web
 You were one missing line (app.run) away. Now it’ll behave.
 ```
 ## Reflection on output
+
 *after implementing these changes it fixed the bad gateway part but it then switched to backend unavailable*
 ---
 ## Prompt 3
+
 there is something wrong with my api bc it says "backend unavailable"
 
 ## Response 3
@@ -1125,9 +1129,11 @@ Fix order: API listening on 0.0.0.0:5000, Nginx proxy /api/ → api:5000 with tr
 Don’t trust the browser page—curl the endpoints; the HTTP codes will tell you the truth.
 ```
 ## Reflection on output
+
 *after this output the whole application worked and no further changes were needed but while inspecting the files i noticed that my web/Dockerfile used the wrong image so i needed this to be corrected*
 
 ## prompt 4
+
 while checking my web/Dockerfile i noticed that its using nginx alpine image i need the ubuntu 24.04 one can u change this
 ## response 4
 ```
@@ -1160,9 +1166,11 @@ sudo docker compose up -d web
 This way your web container now runs on Ubuntu 24.04 and installs nginx during image creation.
 ```
 ## Reflection on input
+
 *this was the final ouput i needed to finish this assingment, but while reviewing my Dockferfile, i noticed that my html files are being copied into the image.*
 
 ## Prompt 5
+
 while reviewing my Dockferfile, i noticed that my html files are being copied into the image. my files must not be inside containers but must live on the host. update my docker-compose.yml and my Dockerfile so that my web files are mounted from the host instead of baked into the image
 ## response 5
 ```
@@ -1244,6 +1252,7 @@ docker compose up -d --build
 ```
 ---
 ## reflection on input
+
 *after this my assignment complied with what was asked of me so no further prompts were needed*
 
 ## AI Assistance Reflection:
