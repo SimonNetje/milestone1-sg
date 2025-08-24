@@ -61,7 +61,7 @@ milestone-stack/
 
 ## ⚙ Configuration Files
 
-docker-compose.yaml
+### `docker-compose.yaml`
 ```
 services:
   mongo:
@@ -180,7 +180,7 @@ http {
   }
 }
 ```
-### web/entrypoint.sh
+### `web/entrypoint.sh`
 ```
 #!/usr/bin/env bash
 set -euo pipefail
@@ -199,7 +199,7 @@ fi
 exec nginx -g 'daemon off;'
 ```
 
-### web/html/index.html
+### `web/html/index.html`
 ```
 <!doctype html>
 <html lang="en">
@@ -237,7 +237,7 @@ exec nginx -g 'daemon off;'
 </body>
 </html>
 ```
-### mongo-init/init.js
+### `mongo-init/init.js`
 ```
 // Seed once at first container start
 const db = db.getSiblingDB('milestone');
@@ -247,7 +247,7 @@ db.settings.updateOne(
   { upsert: true }
 );
 ```
-### api/app.py
+### `api/app.py`
 ```
 import os, json, socket
 from flask import Flask, jsonify, request
@@ -290,12 +290,12 @@ if __name__ == "__main__":
     # Crucial: actually start the server
     app.run(host="0.0.0.0", port=5000)
 ```
-### api/requirements.txt
+### `api/requirements.txt`
 ```
 flask==3.0.3
 pymongo==4.8.0
 ```
-### api/Dockerfile
+### `api/Dockerfile`
 ```
 FROM python:3.12-slim
 
