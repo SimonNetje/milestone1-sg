@@ -944,7 +944,7 @@ sudo docker compose up -d web
 You were one missing line (app.run) away. Now it’ll behave.
 ```
 ## Reflection on output
-*after implementing these changes it still said bad gateway so i told it that the error persisted*
+*after implementing these changes it fixed the bad gateway part but it then switched to backend unavailable*
 ---
 ## Prompt 3
 there is something wrong with my api bc it says "backend unavailable"
