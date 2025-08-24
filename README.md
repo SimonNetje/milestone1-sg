@@ -9,10 +9,6 @@ This project sets up a **web stack** using Docker Compose that:
 
 ---
 
-## 🗂 Architecture
-Browser --> [LB: Nginx] --> [Web: Ubuntu 24.04 + Nginx]
---> /api -> [API: Flask] -> [MongoDB]
-
 
 **Services:**
 - **web**: Ubuntu 24.04 + Nginx, serves static HTML + JS, proxies `/api` to Flask API.
@@ -43,27 +39,23 @@ milestone-stack/
 ## ✅ Requirements Mapping
 | Requirement | Implementation |
 |-------------|----------------|
-| Serve a webpage from a container | `web` service (Ubuntu 24.04 base, installs Nginx) serving `web/html/index.html` |
+| Serve a webpage from a container | `web` service (Ubuntu 24.04 base, installs Nginx) serving `index.html` |
 | Display student name from database | Frontend JavaScript `fetch('/api/name')` → Nginx proxy → Flask API (`api`) → MongoDB |
-| Database persistence | Named volume `mongo-data:/data/db` stores Mongo files on the host, survives container restarts |
-| Web files on host | Compose bind-mount `./web/html:/usr/share/nginx/html:ro` so HTML lives on the host filesystem |
-| Reverse proxy from Nginx to API | `web/nginx.conf` routes `/api/` → `api:5000` via `proxy_pass http://api_upstream;` |
+| Database persistence | Named volume `mongo-data:/data/db` ensures Mongo data survives container restarts |
+| Reverse proxy from Nginx to API | `web/nginx.conf` routes `/api/` → `api:5000` via `proxy_pass` |
 | HTTPS support | Self-signed certificate generated in `web/entrypoint.sh`, served by Nginx on port 443 (`8085:443` mapping) |
 | Works after restart | On refresh, frontend fetches latest value from Mongo; DB state persists due to named volume |
-| Container naming rule | `contnginx2-m1-SG` (web), `contmongo-m1-SG` (mongo), `contapi-m1-SG` (api) — matching assignment convention |
-| Config files documented | Full explanation of: `docker-compose.yml`, `web/Dockerfile`, `web/nginx.conf`, `web/entrypoint.sh`, `api/Dockerfile`, `api/app.py`, `mongo-init/init.js` |
+| Container naming rule | `contnginx2-m1-SG` (web), `contmongo-m1-SG` (mongo), `contapi-m1-SG` (api) |
+| Config files documented | All configs included and explained: `docker-compose.yml`, `web/Dockerfile`, `nginx.conf`, `entrypoint.sh`, `api/Dockerfile`, `app.py`, `mongo-init/init.js` |
 | Generative AI usage (mandatory) | Prompts and ChatGPT responses included in appendix, plus reflection on how AI helped debug and improve the stack |
 
 ---
-## 🔒 Security Notes
-- **HTTPS/TLS**: Self-signed certificate encrypts traffic between browser and LB.
-- **Reverse Proxy**: LB hides backend service IPs, reduces direct attack surface.
----
 ## YOUTUBE DEMONSTRATION
-- https://youtu.be/s8x4dWchof0 
+- https://youtu.be/s8x4dWchof0
 
-## ⚙ Configuration Files
-
+## 🔒 Security Notes
+- **HTTPS/TLS**: All browser traffic is encrypted with a self-signed certificate generated at container startup.
+- **Reverse Proxy**: Nginx acts as a reverse proxy, isolating the API from direct exposure.
 
 ---
 
@@ -101,7 +93,7 @@ services:
 
   web:
     build: ./web
-    container_name: contnginx-m1-SG
+    container_name: contnginx2-m1-SG
     restart: unless-stopped
     ports:
       # Host 8085 -> container 443 (HTTPS)
@@ -109,7 +101,7 @@ services:
     depends_on:
       - api
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "https://localhost/healthz", "--no-check-certificate"]
+      test: ["CMD", "curl", "-ks", "https://localhost/healthz"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -121,20 +113,23 @@ volumes:
 
 ### `web/Dockerfile`
 ```dockerfile
-FROM nginx:1.27-alpine
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apk add --no-cache openssl bash
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nginx openssl curl bash \
+ && rm -rf /var/lib/apt/lists/*
 
-# Copy nginx config and static site
+# Your existing config + site
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY html/ /usr/share/nginx/html/
 
-# Entrypoint will create a self-signed cert on first boot if missing
+# Same entrypoint behavior
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 443
-HEALTHCHECK CMD wget -qO- https://localhost/healthz --no-check-certificate || exit 1
+HEALTHCHECK CMD curl -ks https://localhost/healthz || exit 1
 ENTRYPOINT ["/entrypoint.sh"]
 ```
 ### `web/nginx.conf`
