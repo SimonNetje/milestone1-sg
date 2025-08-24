@@ -57,6 +57,10 @@ milestone-stack/
 - **HTTPS/TLS**: All browser traffic is encrypted with a self-signed certificate generated at container startup.
 - **Reverse Proxy**: Nginx acts as a reverse proxy, isolating the API from direct exposure.
 
+## Data persistance explained
+The web page updates automatically because the frontend fetches the name from the API every time it loads, so any change in MongoDB is shown after a refresh.
+The data persists because MongoDB stores its files in a named Docker volume (mongo-data), which lives on the host and is not deleted when containers are removed or restarted.
+
 ---
 
 ## Install docker on VM
