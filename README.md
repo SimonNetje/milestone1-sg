@@ -45,21 +45,24 @@ milestone-stack/
 ## ✅ Requirements Mapping
 | Requirement | Implementation |
 |-------------|----------------|
-| Serve a webpage from a container | `web` service (Ubuntu 24.04 + Nginx) serving `index.html` |
-| Display student name from database | JavaScript fetch to `/api/name` → Flask → MongoDB |
-| Database persistence | MongoDB volume `./mongo/data:/data/db` |
-| Reverse proxy from Nginx to API | `web/nginx.conf` proxies `/api` to Flask |
-| Load balancing | `m1-lb` container with upstream to `web` replicas |
-| HTTPS support | Self-signed cert in `/web/certs` mounted into Nginx |
-| Horizontal scaling | `docker compose up -d --scale web=3` |
-| Works after restart | Data remains via bound volumes |
-| Bonus: Container hostname shown | `___HOST___` replaced with `$hostname` in Nginx sub_filter |
+| Serve a webpage from a container | `web` service (Ubuntu 24.04 base, installs Nginx) serving `web/html/index.html` |
+| Display student name from database | Frontend JavaScript `fetch('/api/name')` → Nginx proxy → Flask API (`api`) → MongoDB |
+| Database persistence | Named volume `mongo-data:/data/db` stores Mongo files on the host, survives container restarts |
+| Web files on host | Compose bind-mount `./web/html:/usr/share/nginx/html:ro` so HTML lives on the host filesystem |
+| Reverse proxy from Nginx to API | `web/nginx.conf` routes `/api/` → `api:5000` via `proxy_pass http://api_upstream;` |
+| HTTPS support | Self-signed certificate generated in `web/entrypoint.sh`, served by Nginx on port 443 (`8085:443` mapping) |
+| Works after restart | On refresh, frontend fetches latest value from Mongo; DB state persists due to named volume |
+| Container naming rule | `contnginx2-m1-SG` (web), `contmongo-m1-SG` (mongo), `contapi-m1-SG` (api) — matching assignment convention |
+| Config files documented | Full explanation of: `docker-compose.yml`, `web/Dockerfile`, `web/nginx.conf`, `web/entrypoint.sh`, `api/Dockerfile`, `api/app.py`, `mongo-init/init.js` |
+| Generative AI usage (mandatory) | Prompts and ChatGPT responses included in appendix, plus reflection on how AI helped debug and improve the stack |
+
 ---
 ## 🔒 Security Notes
 - **HTTPS/TLS**: Self-signed certificate encrypts traffic between browser and LB.
 - **Reverse Proxy**: LB hides backend service IPs, reduces direct attack surface.
-- **Internal Network**: Services communicate on isolated Docker network `m1net`.
 ---
+## YOUTUBE DEMONSTRATION
+- https://youtu.be/s8x4dWchof0 
 
 ## ⚙ Configuration Files
 
