@@ -78,140 +78,137 @@ restart the VM after these changes
 
 ### `docker-compose.yaml`
 ```
-services:
-  mongo:
-    image: mongo:7
-    container_name: contmongo-m1-SG
-    restart: unless-stopped
+services:                         # Top-level key: list of long-running containers in this app
+  mongo:                          # Service name: reachable as "mongo" on the Compose network
+    image: mongo:7                # Use official MongoDB v7 image
+    container_name: contmongo-m1-SG  # Fixed container name per assignment
+    restart: unless-stopped       # Auto-restart unless explicitly stopped by you
     volumes:
-      - mongo-data:/data/db
+      - mongo-data:/data/db       # Named volume for database files (persistence across restarts)
       - ./mongo-init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
+                                   # Bind-mount seed scripts (run once on first DB init)
+    healthcheck:                  # Let other services wait for a healthy DB
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+                                   # Ask Mongo to reply to a ping (returns 1 on success)
+      interval: 10s               # Run the check every 10 seconds
+      timeout: 5s                 # Fail the check if it takes more than 5 seconds
+      retries: 10                 # Mark unhealthy after 10 failures
 
-  api:
-    build: ./api
-    container_name: contapi-m1-SG
-    restart: unless-stopped
-    environment:
+  api:                            # Flask API service
+    build: ./api                  # Build from ./api/Dockerfile
+    container_name: contapi-m1-SG # Fixed container name
+    restart: unless-stopped       # Same restart policy as others
+    environment:                  # Runtime configuration → picked up in app.py
       - MONGO_URL=mongodb://mongo:27017
       - MONGO_DB=milestone
       - MONGO_COLL=settings
-    depends_on:
+    depends_on:                   # Wait until mongo passes its healthcheck
       mongo:
         condition: service_healthy
     expose:
-      - "5000"
+      - "5000"                    # Expose 5000 to the Docker network (NOT to host)
 
-  web:
-    build: ./web
+  web:                            # Nginx web frontend
+    build: ./web                  # Build from ./web/Dockerfile (Ubuntu 24.04 base)
     container_name: contnginx2-m1-SG
     restart: unless-stopped
     ports:
-      # Host 8085 -> container 443 (HTTPS)
-      - "8085:443"
+      - "8085:443"                # Publish container HTTPS :443 to host :8085
     depends_on:
-      - api
+      - api                       # Start web after api (not health-gated; fine here)
     healthcheck:
       test: ["CMD", "curl", "-ks", "https://localhost/healthz"]
+                                   # Ask Nginx’s /healthz over HTTPS, ignore self-signed (-k)
       interval: 10s
       timeout: 5s
       retries: 10
-    # If you’re on older Compose, add: networks: [default]
+    # networks: [default]         # (Implicit in Compose v2; left as a reminder)
 
 volumes:
-  mongo-data:
+  mongo-data:                     # Named volume declaration (Docker manages location on host)
 ```
 
 ### `web/Dockerfile`
 ```dockerfile
-FROM ubuntu:24.04
-ENV DEBIAN_FRONTEND=noninteractive
+FROM ubuntu:24.04                                   # Requirement: base on Ubuntu 24.04
+ENV DEBIAN_FRONTEND=noninteractive                  # Non-interactive APT to avoid tzdata prompts
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends nginx openssl curl bash \
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \                                # Refresh package lists
+ && apt-get install -y --no-install-recommends \    # Install only what we need
+      nginx openssl curl bash \                     # Nginx webserver, OpenSSL for self-signed cert, curl for healthcheck
+ && rm -rf /var/lib/apt/lists/*                     # Keep image slim: remove cached lists
 
-# Your existing config + site
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY html/ /usr/share/nginx/html/
+COPY nginx.conf /etc/nginx/nginx.conf               # Bring in your Nginx config
+COPY html/ /usr/share/nginx/html/                   # Static site files
 
-# Same entrypoint behavior
-COPY entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh                   # Entrypoint: generate cert if missing, then start nginx
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 443
+EXPOSE 443                                          # Document that the container listens on 443
 HEALTHCHECK CMD curl -ks https://localhost/healthz || exit 1
-ENTRYPOINT ["/entrypoint.sh"]
+                                                    # Container-level health: hit Nginx’s /healthz over HTTPS
+ENTRYPOINT ["/entrypoint.sh"]                       # PID 1: your script; ends with nginx in foreground
+
 ```
 ### `web/nginx.conf`
 ```
-worker_processes auto;
-
-events {}
+worker_processes auto;                               # Scale workers to CPU cores
+events {}                                            # Use defaults (epoll/kqueue chosen automatically)
 
 http {
-  server_tokens off;
-  include       mime.types;
-  default_type  application/octet-stream;
-  sendfile      on;
+  server_tokens off;                                 # Don’t leak Nginx version in headers
+  include       mime.types;                          # Map file extensions to MIME types
+  default_type  application/octet-stream;            # Fallback MIME
+  sendfile      on;                                  # Kernel zero-copy for static files
 
-  # Redirect HTTP->HTTPS (optional: only if you also expose 80)
-  # server {
-  #   listen 80;
-  #   return 301 https://$host$request_uri;
-  # }
+  # (Optional HTTP→HTTPS redirect block omitted; you only expose 443)
 
-  upstream api_upstream {
-    server api:5000;
+  upstream api_upstream {                            # Name the API backend as an upstream
+    server api:5000;                                 # Resolve "api" via Docker DNS, port 5000
   }
 
   server {
-    listen 443 ssl;
-    ssl_certificate     /etc/nginx/ssl/selfsigned.crt;
+    listen 443 ssl;                                  # HTTPS listener
+    ssl_certificate     /etc/nginx/ssl/selfsigned.crt;  # Self-signed cert generated by entrypoint
     ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
 
-    # Health
     location = /healthz { return 200 "ok"; add_header Content-Type text/plain; }
+                                                      # Simple health endpoint for Docker healthcheck
 
-    # Static
-    root /usr/share/nginx/html;
+    root /usr/share/nginx/html;                      # Serve your static site from here
     index index.html;
 
-    location / {
-      try_files $uri /index.html;
+    location / {                                     # Frontend route
+      try_files $uri /index.html;                    # Serve file if exists, else SPA fallback
     }
 
-    # API passthrough to Flask
-    location /api/ {
-      proxy_pass http://api_upstream;
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    location /api/ {                                 # Everything under /api hits Flask
+      proxy_pass http://api_upstream;                # Forward path as-is to the upstream
+      proxy_set_header Host $host;                   # Preserve Host header
+      proxy_set_header X-Real-IP $remote_addr;       # Client IP for logging
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # Standard proxy chain
     }
   }
 }
+
 ```
 ### `web/entrypoint.sh`
 ```
 #!/usr/bin/env bash
-set -euo pipefail
+set -euo pipefail                                   # Fail fast; catch unset vars; strong shell hygiene
 
 SSL_DIR=/etc/nginx/ssl
 mkdir -p "$SSL_DIR"
 
-# Generate self-signed cert if not present
+# Generate self-signed cert if not present (first boot)
 if [ ! -f "$SSL_DIR/selfsigned.key" ] || [ ! -f "$SSL_DIR/selfsigned.crt" ]; then
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "$SSL_DIR/selfsigned.key" \
     -out "$SSL_DIR/selfsigned.crt" \
-    -subj "/CN=localhost"
+    -subj "/CN=localhost"                            # CN=localhost; acceptable for your IP test with -k
 fi
 
-exec nginx -g 'daemon off;'
+exec nginx -g 'daemon off;'                          # Hand off to nginx in the foreground (PID 1)
 ```
 
 ### `web/html/index.html`
@@ -219,10 +216,11 @@ exec nginx -g 'daemon off;'
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8">                               <!-- Standards-compliant encoding -->
   <title>Milestone</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1"> <!-- Responsive -->
   <style>
+    /* Minimal, centered card UI */
     html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
     .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;background:#0b1020;color:#eef2ff}
     .card{padding:32px;border-radius:16px;background:#121a33;box-shadow:0 10px 30px rgba(0,0,0,.4);text-align:center}
@@ -233,24 +231,25 @@ exec nginx -g 'daemon off;'
 </head>
 <body>
 <div class="wrap"><div class="card">
-  <h1 id="msg">Loading…</h1>
-  <p class="cid" id="cid"></p>
+  <h1 id="msg">Loading…</h1>                          <!-- Placeholder until API returns -->
+  <p class="cid" id="cid"></p>                         <!-- API container ID goes here -->
 </div></div>
 <script>
 (async () => {
   try {
-    const r = await fetch('/api/name', {cache:'no-store'});
+    const r = await fetch('/api/name', {cache:'no-store'});   // Same-origin call via Nginx; no CORS hassle
     if (!r.ok) throw new Error('API error');
-    const { name, container_id } = await r.json();
-    document.getElementById('msg').textContent = `${name} has reached milestone1!!!`;
-    document.getElementById('cid').textContent = `Container: ${container_id}`;
+    const { name, container_id } = await r.json();            // Expect { name, container_id }
+    document.getElementById('msg').textContent = `${name} has reached milestone1!!!`; // Assignment message
+    document.getElementById('cid').textContent = `Container: ${container_id}`;        // Show API container ID
   } catch (e) {
-    document.getElementById('msg').textContent = 'Backend unavailable';
+    document.getElementById('msg').textContent = 'Backend unavailable';               // Clear error state
   }
 })();
 </script>
 </body>
 </html>
+
 ```
 ### `mongo-init/init.js`
 ```
@@ -268,28 +267,31 @@ import os, json, socket
 from flask import Flask, jsonify, request
 from pymongo import MongoClient
 
+# ---- Config via env (set in docker-compose) ----
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://mongo:27017")
 DB_NAME   = os.getenv("MONGO_DB", "milestone")
 COLL_NAME = os.getenv("MONGO_COLL", "settings")
 
-client = MongoClient(MONGO_URL)
+# ---- DB client and handles ----
+client = MongoClient(MONGO_URL)               # Lazy-connect; actual I/O on first operation
 db = client[DB_NAME]
 coll = db[COLL_NAME]
 
 app = Flask(__name__)
 
 def get_container_id():
-    cid = socket.gethostname()
-    return cid[:12]
+    cid = socket.gethostname()               # In Docker, hostname defaults to container ID
+    return cid[:12]                          # Trim for readability
 
 @app.get("/api/healthz")
 def healthz():
-    return "ok", 200
+    return "ok", 200                         # Simple liveness/readiness probe
 
 @app.get("/api/name")
 def get_name():
     doc = coll.find_one({"_id": "display_name"}) or {"value": "Unknown"}
-    return jsonify({"name": doc.get("value", "Unknown"), "container_id": get_container_id()})
+    return jsonify({"name": doc.get("value", "Unknown"),
+                    "container_id": get_container_id()})
 
 @app.put("/api/name")
 def set_name():
@@ -302,26 +304,27 @@ def set_name():
     return jsonify({"name": doc["value"], "container_id": get_container_id()})
 
 if __name__ == "__main__":
-    # Crucial: actually start the server
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000)       # Listen on all interfaces (required inside containers)
+
 ```
 ### `api/requirements.txt`
 ```
-flask==3.0.3
-pymongo==4.8.0
+flask==3.0.3                                  # Web microframework
+pymongo==4.8.0                                # MongoDB driver
+
 ```
 ### `api/Dockerfile`
 ```
-FROM python:3.12-slim
-
-WORKDIR /app
-COPY requirements.txt .
+FROM python:3.12-slim                        # Small Python base with 3.12 runtime
+WORKDIR /app                                 # All paths relative to /app
+COPY requirements.txt .                      # Copy dependency manifest
 RUN pip install --no-cache-dir -r requirements.txt
+                                             # Install Flask + PyMongo without leaving wheels/caches
+COPY app.py .                                # Copy the application code
+ENV PYTHONUNBUFFERED=1                       # Flush logs immediately (helpful in containers)
+EXPOSE 5000                                  # Document API port (Compose uses this internally)
+CMD ["python", "app.py"]                     # Start Flask dev server (sufficient for this assignment)
 
-COPY app.py .
-ENV PYTHONUNBUFFERED=1
-EXPOSE 5000
-CMD ["python", "app.py"]
 ```
 ## How to run
 
