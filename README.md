@@ -357,7 +357,7 @@ docker compose up -d --build
 ## Open website
 - https://192.168.56.5:8085/
 
-### Dynamic content test
+### Change name
 ```
 curl -k -X PUT https://192.168.56.5:8085/api/name \
   -H 'Content-Type: application/json' \
