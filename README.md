@@ -5,7 +5,6 @@ This project sets up a **web stack** using Docker Compose that:
 - Serves a webpage from an **Ubuntu 24.04 Nginx** container.
 - Fetches the student’s name live from **MongoDB**.
 - Keeps data **persistent** on the host (survives container restarts).
-- Supports **horizontal scaling** for load balancing (bonus).
 - Supports **TLS encryption** with a self-signed certificate (bonus).
 
 ---
@@ -19,7 +18,6 @@ Browser --> [LB: Nginx] --> [Web: Ubuntu 24.04 + Nginx]
 - **web**: Ubuntu 24.04 + Nginx, serves static HTML + JS, proxies `/api` to Flask API.
 - **api**: Flask app that queries MongoDB and returns JSON.
 - **mongo**: MongoDB 7.x, seeded with `Simon Gielen` on first run.
-- **lb**: Nginx load balancer for scaling + TLS.
 
 ---
 
@@ -1090,7 +1088,42 @@ Fix order: API listening on 0.0.0.0:5000, Nginx proxy /api/ → api:5000 with tr
 Don’t trust the browser page—curl the endpoints; the HTTP codes will tell you the truth.
 ```
 ## Reflection on output
-*after this output the whole application worked and no further changes were needed*
+*after this output the whole application worked and no further changes were needed but while inspecting the files i noticed that my web/Dockerfile used the wrong image so i needed this to be corrected*
+
+## prompt 4
+while checking my web/Dockerfile i noticed that its using nginx alpine image i need the ubuntu 24.04 one can u change this
+## response 4
+```
+Yes — that’s the only change you need. Here’s your corrected web/Dockerfile using Ubuntu 24.04 as base, with nginx installed during build:
+
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nginx openssl curl bash \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy nginx config and static site
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY html/ /usr/share/nginx/html/
+
+# Entrypoint will create a self-signed cert on first boot if missing
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 443
+HEALTHCHECK CMD curl -ks https://localhost/healthz || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
+
+Apply the change
+sudo docker compose build web
+sudo docker compose up -d web
+
+
+This way your web container now runs on Ubuntu 24.04 and installs nginx during image creation.
+```
+## Reflection on input
+*this was the final ouput i needed to finish this assingment*
 
 ## AI Assistance Reflection:
   I used generative AI to:
