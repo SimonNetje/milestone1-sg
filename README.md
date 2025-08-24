@@ -1254,7 +1254,7 @@ docker compose up -d --build
 ## reflection on input
 
 *after this my assignment complied with what was asked of me so no further prompts were needed*
-
+---
 ## AI Assistance Reflection:
 Generative AI was a essential tool used during this assignment. i used it in the following ways:
 - code generation and scaffolding: AI helped me to write the files, this gave me the starting baseline instead of starting from scratch
@@ -1263,7 +1263,7 @@ Generative AI was a essential tool used during this assignment. i used it in the
 
 While AI generated solution, I still did manual testing and adapted or rejected things AI gave me or didnt give me for example it didnt update that it used wget in the healthcheck so i replaced it with curl because of the image differences
 
-## Reflection
+## Conclusion
 AI saved me a lot of time by identifying common mistakes and also clarifying docker concepts. However I still had to apply judgement: testing every suggestion and disgarding wrong ones, and where AI was not right I was able to change it myself because in trying this so many times I started understanding how things worked together. This process improved my understanding of container networking, persitence and encryption rather than just copying whatever AI gave me. By the end of the process, I can explain every line of configuration and why it was needed. That is a sign that AI support helped me to a real understanding.
 
 
