@@ -373,6 +373,9 @@ docker compose up -d
 
 # POC
 <img width="775" height="703" alt="image" src="https://github.com/user-attachments/assets/45418d20-afff-455e-8372-02831e406f86" />
+<img width="1056" height="1159" alt="image" src="https://github.com/user-attachments/assets/09d357c7-25c4-4539-8b35-60c5f6e08f03" />
+
+
 
 ---
 # AI Prompts
@@ -1243,12 +1246,11 @@ docker compose up -d --build
 *after this my assignment complied with what was asked of me so no further prompts were needed*
 
 ## AI Assistance Reflection:
-  I used generative AI to:
-  Design the stack layout (web → API → DB).
-  Write docker-compose.yml and config files.
-  Debug proxy path issues (/api/name mapping).
-  Add scaling & TLS support.
-  Document steps and explain commands.
-  This allowed me to focus on understanding the architecture rather than memorizing syntax.
+Generative AI was a essential tool used during this assignment. i used it in the following ways:
+- code generation and scaffolding: AI helped me to write the files, this gave me the starting baseline instead of starting from scratch
+- Debugging: When i encountered errors like 502 bad gateway and backend unavailable. I used AI as my guide to fix these issues
+
+## Reflection
+AI saved me a lot of time by identifying common mistakes and also clarifying docker concepts. However I still had to apply judgement: testing every suggestion and disgarding wrong ones, and where AI was not right I was able to change it myself because in trying this so many times I started understanding how things worked together. This process improved my understanding of container networking, persitence and encryption rather than just copying whatever AI gave me.
 
 
