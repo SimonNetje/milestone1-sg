@@ -25,23 +25,20 @@ Browser --> [LB: Nginx] --> [Web: Ubuntu 24.04 + Nginx]
 
 ## 📁 Project Structure
 ```
-milestone_sg/
-├── docker-compose.yml
-├── web/
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   ├── html/
-│   │   └── index.html
-│   └── certs/
-├── api/
-│   ├── app.py
-│   └── requirements.txt
-├── mongo/
-│   ├── init/
-│   │   └── init.js
-│   └── data/
-└── lb/
-    └── nginx.conf
+milestone-stack/
+├─ docker-compose.yml
+├─ web/
+│  ├─ Dockerfile
+│  ├─ nginx.conf
+│  ├─ entrypoint.sh
+│  └─ html/
+│     └─ index.html
+├─ api/
+│  ├─ Dockerfile
+│  ├─ requirements.txt
+│  └─ app.py
+└─ mongo-init/
+   └─ init.js
 ```
 
 ---
@@ -73,132 +70,137 @@ milestone_sg/
 
 docker-compose.yaml
 ```
-version: "3.9"
 services:
-  web:
-    build:
-      context: ./web
-    depends_on:
-      - api
-    volumes:
-      - ./web/html:/var/www/html:ro
-      - ./web/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./web/certs:/etc/nginx/certs:ro
-    networks: [ m1net ]
-
-  api:
-    image: python:3.12-slim
-    container_name: contapi-m1-SG
-    working_dir: /app
-    command: sh -c "pip install --no-cache-dir -r requirements.txt && python app.py"
-    volumes:
-      - ./api:/app:ro
-    environment:
-      - MONGO_URI=mongodb://contmongo-m1-SG:27017
-      - MONGO_DB=milestone
-      - MONGO_COLL=students
-    depends_on:
-      - mongo
-    networks: [ m1net ]
-
   mongo:
     image: mongo:7
     container_name: contmongo-m1-SG
+    restart: unless-stopped
     volumes:
-      - ./mongo/data:/data/db
-      - ./mongo/init:/docker-entrypoint-initdb.d:ro
-    networks: [ m1net ]
+      - mongo-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  lb:
-    image: nginx:alpine
-    container_name: m1-lb
+  api:
+    build: ./api
+    container_name: contapi-m1-SG
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - MONGO_DB=milestone
+      - MONGO_COLL=settings
     depends_on:
-      - web
-    volumes:
-      - ./lb/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./web/certs:/etc/nginx/certs:ro
-    ports:
-      - "8085:80"
-      - "8443:443"
-    networks: [ m1net ]
+      mongo:
+        condition: service_healthy
+    expose:
+      - "5000"
 
-networks:
-  m1net: {}
+  web:
+    build: ./web
+    container_name: contnginx-m1-SG
+    restart: unless-stopped
+    ports:
+      # Host 8085 -> container 443 (HTTPS)
+      - "8085:443"
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "https://localhost/healthz", "--no-check-certificate"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # If you’re on older Compose, add: networks: [default]
+
+volumes:
+  mongo-data:
 ```
 
 ### `web/Dockerfile`
 ```dockerfile
-FROM ubuntu:24.04
+FROM nginx:1.27-alpine
 
-ENV DEBIAN_FRONTEND=noninteractive
+RUN apk add --no-cache openssl bash
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy nginx config from host (mounted at runtime), fallback kept here so image can start without mount.
+# Copy nginx config and static site
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY html/ /usr/share/nginx/html/
 
-EXPOSE 80 443
+# Entrypoint will create a self-signed cert on first boot if missing
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 443
+HEALTHCHECK CMD wget -qO- https://localhost/healthz --no-check-certificate || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
 ```
 ### `web/nginx.conf`
 ```
 worker_processes auto;
 
-events { worker_connections 1024; }
+events {}
 
 http {
-  include       /etc/nginx/mime.types;
+  server_tokens off;
+  include       mime.types;
   default_type  application/octet-stream;
   sendfile      on;
-  server_tokens off;
 
-  server {
-    listen 80;
-    server_name _;
-    root /var/www/html;
-    index index.html;
+  # Redirect HTTP->HTTPS (optional: only if you also expose 80)
+  # server {
+  #   listen 80;
+  #   return 301 https://$host$request_uri;
+  # }
 
-    # Replace placeholder in HTML with container hostname to prove load-balancing
-    sub_filter_once off;
-    sub_filter_types text/html;
-    sub_filter "___HOST___" $hostname;
-
-    location /api/ {
-      proxy_pass http://api:5000;
-      proxy_http_version 1.1;
-      proxy_set_header Connection "";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-    }
+  upstream api_upstream {
+    server api:5000;
   }
 
-  # Optional TLS server. Enable by mounting certs and mapping 443 in compose.
   server {
     listen 443 ssl;
-    server_name milestone.local;
+    ssl_certificate     /etc/nginx/ssl/selfsigned.crt;
+    ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
 
-    ssl_certificate     /etc/nginx/certs/milestone.crt;
-    ssl_certificate_key /etc/nginx/certs/milestone.key;
+    # Health
+    location = /healthz { return 200 "ok"; add_header Content-Type text/plain; }
 
-    root /var/www/html;
+    # Static
+    root /usr/share/nginx/html;
     index index.html;
 
-    sub_filter_once off;
-    sub_filter_types text/html;
-    sub_filter "___HOST___" $hostname;
+    location / {
+      try_files $uri /index.html;
+    }
 
+    # API passthrough to Flask
     location /api/ {
-      proxy_pass http://api:5000/;
-      proxy_http_version 1.1;
-      proxy_set_header Connection "";
+      proxy_pass http://api_upstream;
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
   }
 }
+```
+### web/entrypoint.sh
+```
+#!/usr/bin/env bash
+set -euo pipefail
+
+SSL_DIR=/etc/nginx/ssl
+mkdir -p "$SSL_DIR"
+
+# Generate self-signed cert if not present
+if [ ! -f "$SSL_DIR/selfsigned.key" ] || [ ! -f "$SSL_DIR/selfsigned.crt" ]; then
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout "$SSL_DIR/selfsigned.key" \
+    -out "$SSL_DIR/selfsigned.crt" \
+    -subj "/CN=localhost"
+fi
+
+exec nginx -g 'daemon off;'
 ```
 
 ### web/html/index.html
@@ -206,113 +208,109 @@ http {
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Milestone 1</title>
+  <meta charset="utf-8">
+  <title>Milestone</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 2rem; }
-    h1 { font-size: 2rem; }
-    .muted { color: #666; }
-    .box { margin-top: 1rem; padding: 0.75rem 1rem; border: 1px solid #ddd; border-radius: 8px; }
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;background:#0b1020;color:#eef2ff}
+    .card{padding:32px;border-radius:16px;background:#121a33;box-shadow:0 10px 30px rgba(0,0,0,.4);text-align:center}
+    h1{margin:0 0 12px;font-size:28px;letter-spacing:.5px}
+    p{margin:6px 0 0;opacity:.8}
+    .cid{font-size:12px;opacity:.7;margin-top:6px}
   </style>
 </head>
 <body>
+<div class="wrap"><div class="card">
   <h1 id="msg">Loading…</h1>
-  <div class="box">
-    <div class="muted">Served by container:</div>
-    <div id="host">___HOST___</div>
-  </div>
-
-  <script>
-    fetch('/api/name')
-      .then(r => r.json())
-      .then(d => {
-        const name = d.fullname || "Unknown";
-        document.getElementById('msg').textContent = name + " has reached Milestone 1!!!";
-      })
-      .catch(e => {
-        document.getElementById('msg').textContent = 'API error: ' + e;
-      });
-  </script>
+  <p class="cid" id="cid"></p>
+</div></div>
+<script>
+(async () => {
+  try {
+    const r = await fetch('/api/name', {cache:'no-store'});
+    if (!r.ok) throw new Error('API error');
+    const { name, container_id } = await r.json();
+    document.getElementById('msg').textContent = `${name} has reached milestone1!!!`;
+    document.getElementById('cid').textContent = `Container: ${container_id}`;
+  } catch (e) {
+    document.getElementById('msg').textContent = 'Backend unavailable';
+  }
+})();
+</script>
 </body>
 </html>
 ```
-### mongo/init
+### mongo-init/init.js
 ```
-db = db.getSiblingDB('milestone');
-db.createCollection('students');
-db.students.insertOne({ fullname: "Simon Gielen" });
+// Seed once at first container start
+const db = db.getSiblingDB('milestone');
+db.settings.updateOne(
+  { _id: "display_name" },
+  { $setOnInsert: { value: "Simon Gielen" } },
+  { upsert: true }
+);
 ```
 ### api/app.py
 ```
-from flask import Flask, jsonify
+import os, json, socket
+from flask import Flask, jsonify, request
 from pymongo import MongoClient
-import os, socket
 
-app = Flask(__name__)
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://mongo:27017")
+DB_NAME   = os.getenv("MONGO_DB", "milestone")
+COLL_NAME = os.getenv("MONGO_COLL", "settings")
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://contmongo-m1-SG:27017")
-DB_NAME = os.environ.get("MONGO_DB", "milestone")
-COLL_NAME = os.environ.get("MONGO_COLL", "students")
-
-client = MongoClient(MONGO_URI)
+client = MongoClient(MONGO_URL)
 db = client[DB_NAME]
 coll = db[COLL_NAME]
 
-@app.get('/api/name')
+app = Flask(__name__)
+
+def get_container_id():
+    cid = socket.gethostname()
+    return cid[:12]
+
+@app.get("/api/healthz")
+def healthz():
+    return "ok", 200
+
+@app.get("/api/name")
 def get_name():
-    doc = coll.find_one({})
-    fullname = (doc or {}).get('fullname', 'Unknown')
-    return jsonify({"fullname": fullname})
+    doc = coll.find_one({"_id": "display_name"}) or {"value": "Unknown"}
+    return jsonify({"name": doc.get("value", "Unknown"), "container_id": get_container_id()})
 
-@app.get('/api/meta')
-def meta():
-    return jsonify({"hostname": socket.gethostname()})
+@app.put("/api/name")
+def set_name():
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    coll.update_one({"_id": "display_name"}, {"$set": {"value": name}}, upsert=True)
+    doc = coll.find_one({"_id": "display_name"})
+    return jsonify({"name": doc["value"], "container_id": get_container_id()})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    # Crucial: actually start the server
+    app.run(host="0.0.0.0", port=5000)
 ```
 ### api/requirements.txt
 ```
 flask==3.0.3
 pymongo==4.8.0
 ```
-### lb/nginx.conf
+### api/Dockerfile
 ```
-worker_processes auto;
-events { worker_connections 1024; }
-http {
-  resolver 127.0.0.11 valid=10s ipv6=off;
+FROM python:3.12-slim
 
-  upstream web_backend {
-    zone web_backend 64k;
-    server web:80 resolve;
-  }
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-  server {
-    listen 80;
-    location / {
-      proxy_pass http://web_backend;
-      proxy_http_version 1.1;
-      proxy_set_header Connection "";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-    }
-  }
-
-  server {
-    listen 443 ssl;
-    ssl_certificate     /etc/nginx/certs/milestone.crt;
-    ssl_certificate_key /etc/nginx/certs/milestone.key;
-    location / {
-      proxy_pass http://web_backend;
-      proxy_http_version 1.1;
-      proxy_set_header Connection "";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-    }
-  }
-}
+COPY app.py .
+ENV PYTHONUNBUFFERED=1
+EXPOSE 5000
+CMD ["python", "app.py"]
 ```
 ## How to run
 
@@ -339,7 +337,7 @@ docker compose up -d
 
 
 # POC
-<img width="815" height="347" alt="image" src="https://github.com/user-attachments/assets/8e335773-7fab-4997-83d7-7c86b3de2a4f" />
+<img width="775" height="703" alt="image" src="https://github.com/user-attachments/assets/45418d20-afff-455e-8372-02831e406f86" />
 
 ---
 # AI Prompts
