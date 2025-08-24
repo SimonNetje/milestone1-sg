@@ -315,17 +315,6 @@ http {
 }
 ```
 ## How to run
-### (Optional) create tls cert
-```
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout web/certs/milestone.key -out web/certs/milestone.crt \
-  -subj "/CN=milestone.local"
-```
-
-### Add to your host machine hosts file:
-```
-192.168.56.5 milestone.local
-```
 
 ### Start services
 ```
@@ -333,13 +322,13 @@ docker compose up -d --build
 ```
 
 ## Open website
-- HTTP: http://192.168.56.5:8085
-- HTTPS (bonus): https://milestone.local:8443
+- https://192.168.56.5:8085/
 
 ### Dynamic content test
 ```
-docker exec -it contmongo-m1-SG mongosh --eval \
-'db.getSiblingDB("milestone").students.updateOne({}, {$set:{fullname:"Test Name"}})'
+curl -k -X PUT https://192.168.56.5:8085/api/name \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"New Name"}'
 ```
 
 ### Persistence test
@@ -347,14 +336,8 @@ docker exec -it contmongo-m1-SG mongosh --eval \
 docker compose down
 docker compose up -d
 ```
-### Horizontal Scaling (Bonus)
-```
-docker compose up -d --build --scale web=3
-```
-### TLS Encryption (Bonus)
-```
-curl -vk https://milestone.local:8443/api/name
-```
+
+
 # POC
 <img width="815" height="347" alt="image" src="https://github.com/user-attachments/assets/8e335773-7fab-4997-83d7-7c86b3de2a4f" />
 
@@ -760,8 +743,8 @@ You only see localhost working: you’re testing from the VM/host mismatch. Hit 
 
 If you want me to convert the heredoc placeholders into a single copy-paste blob with all content inlined, say so and I’ll drop the full ready-to-paste script.
 ```
-## Reflection on prompt
-*This first prompt made it work first try so no further tweaking was needed now i am adding load balancing*
+## Reflection on output
+*it was close to working in one prompt but it said bad gateway on the web page so i sent the error hopng that would fix it*
 ---
 ## Prompt 2
 vagrant@vagrant:~/milestone-stack$ sudo docker compose ps
@@ -939,7 +922,9 @@ sudo docker compose up -d web
 
 You were one missing line (app.run) away. Now it’ll behave.
 ```
-
+## Reflection on output
+*after implementing these changes it still said bad gateway so i told it that the error persisted*
+---
 ## Prompt 3
 there is something wrong with my api bc it says "backend unavailable"
 
@@ -1103,6 +1088,8 @@ Fix order: API listening on 0.0.0.0:5000, Nginx proxy /api/ → api:5000 with tr
 
 Don’t trust the browser page—curl the endpoints; the HTTP codes will tell you the truth.
 ```
+## Reflection on output
+*after this output the whole application worked and no further changes were needed*
 
 ## AI Assistance Reflection:
   I used generative AI to:
