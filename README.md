@@ -78,76 +78,81 @@ restart the VM after these changes
 
 ### `docker-compose.yaml`
 ```
-services:                         # Top-level key: list of long-running containers in this app
-  mongo:                          # Service name: reachable as "mongo" on the Compose network
-    image: mongo:7                # Use official MongoDB v7 image
-    container_name: contmongo-m1-SG  # Fixed container name per assignment
-    restart: unless-stopped       # Auto-restart unless explicitly stopped by you
-    volumes:
-      - mongo-data:/data/db       # Named volume for database files (persistence across restarts)
+services:                         # Top-level key: defines the different containers (services) in the stack
+  mongo:                          # First service: MongoDB database
+    image: mongo:7                # Use the official MongoDB v7 image from Docker Hub
+    container_name: contmongo-m1-SG  # Explicit container name, required by the assignment
+    restart: unless-stopped       # Restart the container unless it’s manually stopped
+    volumes:                      # Mount host paths/volumes inside the container
+      - mongo-data:/data/db       # Named volume → persists MongoDB data outside the container
       - ./mongo-init:/docker-entrypoint-initdb.d:ro
-                                   # Bind-mount seed scripts (run once on first DB init)
-    healthcheck:                  # Let other services wait for a healthy DB
+                                   # Bind-mount local folder with init.js → seeds DB at first start
+    healthcheck:                  # Define how Docker checks MongoDB health
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-                                   # Ask Mongo to reply to a ping (returns 1 on success)
-      interval: 10s               # Run the check every 10 seconds
-      timeout: 5s                 # Fail the check if it takes more than 5 seconds
-      retries: 10                 # Mark unhealthy after 10 failures
+                                   # Run `mongosh` ping command → returns 1 if Mongo is alive
+      interval: 10s               # Run the healthcheck every 10 seconds
+      timeout: 5s                 # Fail if no response within 5 seconds
+      retries: 10                 # Mark unhealthy after 10 consecutive failures
 
-  api:                            # Flask API service
-    build: ./api                  # Build from ./api/Dockerfile
-    container_name: contapi-m1-SG # Fixed container name
+  api:                            # Second service: Flask API
+    build: ./api                  # Build image from ./api/Dockerfile
+    container_name: contapi-m1-SG # Explicit container name (assignment requirement)
     restart: unless-stopped       # Same restart policy as others
-    environment:                  # Runtime configuration → picked up in app.py
-      - MONGO_URL=mongodb://mongo:27017
-      - MONGO_DB=milestone
-      - MONGO_COLL=settings
-    depends_on:                   # Wait until mongo passes its healthcheck
+    environment:                  # Environment variables passed to the API container
+      - MONGO_URL=mongodb://mongo:27017   # Connection string for Mongo (service DNS = "mongo")
+      - MONGO_DB=milestone                # Database name
+      - MONGO_COLL=settings               # Collection name
+    depends_on:                   # Wait until Mongo is healthy before starting API
       mongo:
         condition: service_healthy
     expose:
-      - "5000"                    # Expose 5000 to the Docker network (NOT to host)
+      - "5000"                    # Expose port 5000 on the internal Docker network (not host)
 
-  web:                            # Nginx web frontend
-    build: ./web                  # Build from ./web/Dockerfile (Ubuntu 24.04 base)
-    container_name: contnginx2-m1-SG
+  web:                            # Third service: Nginx frontend
+    build: ./web                  # Build from ./web/Dockerfile
+    container_name: contnginx2-m1-SG # Explicit container name (assignment requirement)
     restart: unless-stopped
     ports:
-      - "8085:443"                # Publish container HTTPS :443 to host :8085
+      - "8085:443"                # Map host port 8085 → container port 443 (HTTPS)
     depends_on:
-      - api                       # Start web after api (not health-gated; fine here)
-    healthcheck:
+      - api                       # Web starts only after API service is up
+    volumes:
+      - ./web/html:/usr/share/nginx/html:ro
+                                   # Mount host HTML files → ensures they live outside the container
+    healthcheck:                   # Health check for Nginx
       test: ["CMD", "curl", "-ks", "https://localhost/healthz"]
-                                   # Ask Nginx’s /healthz over HTTPS, ignore self-signed (-k)
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    # networks: [default]         # (Implicit in Compose v2; left as a reminder)
+                                   # Use curl to hit the Nginx health endpoint over HTTPS (-k ignores self-signed cert)
+      interval: 10s                # Run check every 10 seconds
+      timeout: 5s                  # Fail if it takes longer than 5 seconds
+      retries: 10                  # Mark container unhealthy after 10 failed checks
 
-volumes:
-  mongo-data:                     # Named volume declaration (Docker manages location on host)
+volumes:                           # Declare named volumes (managed by Docker)
+  mongo-data:                      # Used for MongoDB data persistence
 ```
 
 ### `web/Dockerfile`
-```dockerfile
-FROM ubuntu:24.04                                   # Requirement: base on Ubuntu 24.04
-ENV DEBIAN_FRONTEND=noninteractive                  # Non-interactive APT to avoid tzdata prompts
+```
+FROM ubuntu:24.04                                   # Base image: Ubuntu 24.04, as required
+ENV DEBIAN_FRONTEND=noninteractive                  # Prevent apt-get prompts during build
 
-RUN apt-get update \                                # Refresh package lists
- && apt-get install -y --no-install-recommends \    # Install only what we need
-      nginx openssl curl bash \                     # Nginx webserver, OpenSSL for self-signed cert, curl for healthcheck
- && rm -rf /var/lib/apt/lists/*                     # Keep image slim: remove cached lists
+RUN apt-get update \                                # Update package index
+ && apt-get install -y --no-install-recommends \    # Install minimal set of packages without extras
+      nginx openssl curl bash \                     # Nginx (web server), OpenSSL (for self-signed certs),
+                                                    # curl (used by healthcheck), bash (for scripts)
+ && rm -rf /var/lib/apt/lists/*                     # Clean package lists → smaller image
 
-COPY nginx.conf /etc/nginx/nginx.conf               # Bring in your Nginx config
-COPY html/ /usr/share/nginx/html/                   # Static site files
+COPY nginx.conf /etc/nginx/nginx.conf               # Copy custom Nginx configuration into container
 
-COPY entrypoint.sh /entrypoint.sh                   # Entrypoint: generate cert if missing, then start nginx
-RUN chmod +x /entrypoint.sh
+# HTML files are no longer copied in (they are mounted at runtime from the host)
+# COPY html/ /usr/share/nginx/html/
 
-EXPOSE 443                                          # Document that the container listens on 443
+COPY entrypoint.sh /entrypoint.sh                   # Copy entrypoint script (generates cert + starts nginx)
+RUN chmod +x /entrypoint.sh                         # Make entrypoint script executable
+
+EXPOSE 443                                          # Document that container listens on port 443 (HTTPS)
 HEALTHCHECK CMD curl -ks https://localhost/healthz || exit 1
-                                                    # Container-level health: hit Nginx’s /healthz over HTTPS
-ENTRYPOINT ["/entrypoint.sh"]                       # PID 1: your script; ends with nginx in foreground
+                                                    # Define healthcheck: run curl against /healthz, ignore cert
+ENTRYPOINT ["/entrypoint.sh"]                       # Run entrypoint script as PID 1
 
 ```
 ### `web/nginx.conf`
@@ -1136,7 +1141,90 @@ sudo docker compose up -d web
 This way your web container now runs on Ubuntu 24.04 and installs nginx during image creation.
 ```
 ## Reflection on input
-*this was the final ouput i needed to finish this assingment*
+*this was the final ouput i needed to finish this assingment, but while reviewing my Dockferfile, i noticed that my html files are being copied into the image.*
+
+## Prompt 5
+while reviewing my Dockferfile, i noticed that my html files are being copied into the image. my files must not be inside containers but must live on the host. update my docker-compose.yml and my Dockerfile so that my web files are mounted from the host instead of baked into the image
+## response 5
+```
+Absolutely — here are the exact edits.
+
+Updated docker-compose.yml (web service only)
+services:
+  mongo:
+    image: mongo:7
+    container_name: contmongo-m1-SG
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./api
+    container_name: contapi-m1-SG
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - MONGO_DB=milestone
+      - MONGO_COLL=settings
+    depends_on:
+      mongo:
+        condition: service_healthy
+    expose:
+      - "5000"
+
+  web:
+    build: ./web
+    container_name: contnginx2-m1-SG
+    restart: unless-stopped
+    ports:
+      - "8085:443"
+    depends_on:
+      - api
+    volumes:
+      - ./web/html:/usr/share/nginx/html:ro   # mount site from host (read-only)
+    healthcheck:
+      test: ["CMD", "curl", "-ks", "https://localhost/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mongo-data:
+
+Updated web/Dockerfile (remove COPY of html)
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nginx openssl curl bash \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY nginx.conf /etc/nginx/nginx.conf
+# html comes from a host bind-mount now:
+# COPY html/ /usr/share/nginx/html/
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 443
+HEALTHCHECK CMD curl -ks https://localhost/healthz || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
+
+Run it
+docker compose down
+docker compose up -d --build
+
+
+(If ./web/html doesn’t exist on the host, create it and put your index.html there.)
+```
+## reflection on input
+*after this my assignment complied with what was asked of me so no further prompts were needed*
 
 ## AI Assistance Reflection:
   I used generative AI to:
